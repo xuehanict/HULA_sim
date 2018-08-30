@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"github.com/roasbeef/btcutil"
 )
 
 const (
@@ -50,10 +49,10 @@ type HulaRouter struct {
 }
 
 type HopTableEntry struct {
-	upperHop  RouterID
-	dis       int
+	upperHop RouterID
+	dis      int
 	capacity int64
-	updated bool
+	updated  bool
 }
 
 type HulaLink struct {
@@ -102,7 +101,7 @@ func (r *HulaRouter) stop() {
 func (r *HulaRouter) newProbe(bls int64) *Probe {
 	probe := &Probe{
 		dest:    r.ID,
-		upper: r.ID,
+		upper:   r.ID,
 		pathDis: 0,
 		pathBls: bls,
 	}
@@ -118,13 +117,13 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 		r.BestHopsTable[p.dest] = &HopTableEntry{
 			upperHop: p.upper,
 			capacity: p.pathBls,
-			dis: p.pathDis + 1,
+			dis:      p.pathDis + 1,
 		}
 		r.ProbeUpdateTable[p.dest] = time.Now().Unix()
 		for _, neighbor := range r.Neighbors {
 			probe := &Probe{
-				dest: p.dest,
-				upper: r.ID,
+				dest:    p.dest,
+				upper:   r.ID,
 				pathDis: p.pathDis + 1,
 			}
 			if p.pathBls > r.getLink(neighbor).capacity {
@@ -134,13 +133,17 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 			}
 			err := r.sendProbeToRouter(neighbor, probe)
 			if err != nil {
-				return fmt.Errorf("router %v handle probe" +
+				return fmt.Errorf("router %v handle probe"+
 					" %v failed : %v", r.ID, p, err)
 			}
 		}
+		// 发送过就标记为false
+		r.BestHopsTable[p.dest].updated = false
 
-	// 找到关于这个dest的路由表信息，我们根据收到的probe和路由表
+		// 找到关于这个dest的路由表信息，我们根据收到的probe和路由表决定要不要更新路由表
 	} else {
+
+		// 如果还是上一跳发来的probe，我们无条件更新
 		if bestHopEntry.upperHop == p.upper {
 			bestHopEntry.dis = p.pathDis + 1
 			capacity := r.getLink(bestHopEntry.upperHop).capacity
@@ -150,22 +153,52 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 				bestHopEntry.capacity = p.pathBls
 			}
 			bestHopEntry.updated = true
-		} else {
-			if bestHopEntry.dis > p.pathDis + 1 {
 
+			// 不是上一跳发来的probe，那么再分两种情况分析
+		} else {
+
+			// 如果跳数更少，则更新
+			if bestHopEntry.dis > p.pathDis+1 {
+				bestHopEntry.dis = p.pathDis + 1
+				bestHopEntry.upperHop = p.upper
+				bestHopEntry.capacity = p.pathBls
+				bestHopEntry.updated = true
+
+				// 跳数相同，但是capacity增大也更新
+			} else if bestHopEntry.dis == p.pathDis+1 &&
+				bestHopEntry.capacity > p.pathBls {
+				bestHopEntry.upperHop = p.upper
+				bestHopEntry.capacity = p.pathBls
+				bestHopEntry.updated = true
 			}
 		}
-
-
-
-
+		lastUpdate, ok := r.ProbeUpdateTable[p.dest]
+		if !ok {
+			return fmt.Errorf("cann't find router ID :%v in"+
+				" updateTable", p.dest)
+		}
+		nowTime := time.Now().Unix()
+		if nowTime-lastUpdate >= UpdateWindow &&
+			bestHopEntry.updated == true {
+			for _, neighbor := range r.Neighbors {
+				probe := &Probe{
+					dest:    p.dest,
+					upper:   r.ID,
+					pathDis: bestHopEntry.dis,
+					pathBls: min(bestHopEntry.capacity,
+						r.getLink(neighbor).capacity),
+				}
+				err := r.sendProbeToRouter(neighbor, probe)
+				if err != nil {
+					return fmt.Errorf("router %v handle probe"+
+						" %v failed : %v", r.ID, p, err)
+				}
+			}
+			r.ProbeUpdateTable[p.dest] = time.Now().Unix()
+			bestHopEntry.updated = false
+		}
 	}
 
-	lastUpdate, ok := r.ProbeUpdateTable[p.dest]
-	if !ok {
-		return fmt.Errorf("cann't find router ID :%v in" +
-			" updateTable", p.dest)
-	}
 	return nil
 }
 
@@ -188,7 +221,7 @@ func newRouter(id RouterID) *HulaRouter {
 	router := &HulaRouter{
 		ID:               id,
 		ProbeUpdateTable: make(map[RouterID]int64),
-		BestHopsTable:    make(map[RouterID]HopTableEntry),
+		BestHopsTable:    make(map[RouterID]*HopTableEntry),
 		Neighbors:        make([]RouterID, 0),
 		MessagePool:      make(chan *Probe, BufferSize),
 		timer:            time.NewTicker(SendCycle * time.Second),
