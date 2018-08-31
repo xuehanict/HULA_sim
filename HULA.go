@@ -245,7 +245,8 @@ func (r *HulaRouter) getLink(neighbor RouterID) *HulaLink {
 }
 
 // addLink adds a link between two
-func addLink(r1, r2 RouterID, capacity int64, linkBase map[string]*HulaLink) error {
+func addLink(r1, r2 RouterID, capacity int64, nodeBase map[RouterID]*HulaRouter,
+	linkBase map[string]*HulaLink) error {
 	linkKey1 := newLinkKey(r1, r2)
 	linkKey2 := newLinkKey(r2, r1)
 	link := &HulaLink{
@@ -260,5 +261,8 @@ func addLink(r1, r2 RouterID, capacity int64, linkBase map[string]*HulaLink) err
 		return fmt.Errorf("link: %v <-----> %v exsist", r1, r2)
 	}
 	linkBase[linkKey1] = link
+
+	nodeBase[r1].Neighbors = append(nodeBase[r1].Neighbors, r2)
+	nodeBase[r2].Neighbors = append(nodeBase[r2].Neighbors, r1)
 	return nil
 }
