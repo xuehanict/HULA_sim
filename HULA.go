@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"os"
 )
 
 const (
 	UpdateWindow = 1
-	SendCycle    = 5
-	BufferSize   = 10
+	SendCycle    = 1
+	BufferSize   = 1000
 )
 
 type RouterID int
@@ -110,6 +111,13 @@ func (r *HulaRouter) newProbe(bls int64) *Probe {
 
 func (r *HulaRouter) handleProbe(p *Probe) error {
 
+	if p.dest == r.ID {
+		return  nil
+	}
+	if p.dest == 5 && p.upper == 9 && r.ID == 10 {
+		fmt.Printf("10 收到9 发来的5的probe:%v\n", p)
+		r.printBestHopTable()
+	}
 	bestHopEntry, ok := r.BestHopsTable[p.dest]
 	// 如果没有在路由表中，那么我们将其添加到路由表中,并且将这个probe
 	// 迅速发给它的所有邻居。
@@ -133,6 +141,7 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 			}
 			err := r.sendProbeToRouter(neighbor, probe)
 			if err != nil {
+				os.Exit(1)
 				return fmt.Errorf("router %v handle probe"+
 					" %v failed : %v", r.ID, p, err)
 			}
@@ -166,7 +175,7 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 
 				// 跳数相同，但是capacity增大也更新
 			} else if bestHopEntry.dis == p.pathDis+1 &&
-				bestHopEntry.capacity > p.pathBls {
+				bestHopEntry.capacity < p.pathBls {
 				bestHopEntry.upperHop = p.upper
 				bestHopEntry.capacity = p.pathBls
 				bestHopEntry.updated = true
@@ -174,9 +183,11 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 		}
 		lastUpdate, ok := r.ProbeUpdateTable[p.dest]
 		if !ok {
+			os.Exit(1)
 			return fmt.Errorf("cann't find router ID :%v in"+
 				" updateTable", p.dest)
 		}
+
 		nowTime := time.Now().Unix()
 		if nowTime-lastUpdate >= UpdateWindow &&
 			bestHopEntry.updated == true {
@@ -190,6 +201,7 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 				}
 				err := r.sendProbeToRouter(neighbor, probe)
 				if err != nil {
+					os.Exit(1)
 					return fmt.Errorf("router %v handle probe"+
 						" %v failed : %v", r.ID, p, err)
 				}
@@ -203,8 +215,9 @@ func (r *HulaRouter) handleProbe(p *Probe) error {
 }
 
 func (r *HulaRouter) printBestHopTable() {
-	for entry := range r.BestHopsTable {
-		fmt.Printf("%v\n", entry)
+	fmt.Printf("router ID: %v table is :%v \n", r.ID, r.BestHopsTable)
+	for dest, entry := range r.BestHopsTable {
+		fmt.Printf("dest: %v entry is %v\n", dest, entry)
 	}
 }
 
@@ -244,7 +257,7 @@ func (r *HulaRouter) getLink(neighbor RouterID) *HulaLink {
 	return nil
 }
 
-// addLink adds a link between two
+// addLink adds a link between two nodes
 func addLink(r1, r2 RouterID, capacity int64, nodeBase map[RouterID]*HulaRouter,
 	linkBase map[string]*HulaLink) error {
 	linkKey1 := newLinkKey(r1, r2)

@@ -1,7 +1,9 @@
 package main
 
+import "strconv"
+
 func newLinkKey(r1, r2 RouterID) string {
-	return string(int(r1)) + "-" + string(int(r2))
+	return strconv.Itoa(int(r1)) + "-" + strconv.Itoa(int(r2))
 }
 
 func min(n1, n2 int64) int64 {

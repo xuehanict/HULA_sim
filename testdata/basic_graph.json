@@ -28,17 +28,17 @@
     {
       "node_1": 1,
       "node_2": 2,
-      "capacity": 10000
+      "capacity": 20000
     },
     {
       "node_1": 2,
       "node_2": 3,
-      "capacity": 10000
+      "capacity": 30000
     },
     {
       "node_1": 3,
       "node_2": 4,
-      "capacity": 10000
+      "capacity": 40000
     }
   ]
 }
